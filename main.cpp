@@ -4,8 +4,6 @@
 // only 64bit..
 #include "simdclaujson.h"
 
-//#include "nlohmann/json.hpp"
-
 
 class Parse {
 public:
@@ -13,50 +11,31 @@ public:
 	simdjson::dom::parser* parser;
 	void operator()(bool x, int64_t y, int64_t z, int no, simdjson::dom::element* output)
 	{
-		*output = parser->parse(x, y, z, no);
+		try {
+			*output = parser->parse(x, y, z, no);
+		}
+		catch (simdjson::simdjson_error e) {
+			std::cout << e.what() << "\n";
+			exit(-1);
+		}
 	}
+
 };
 
 int main(int argc, char* argv[])
 {
-	
-	{
-		//int a, b;
-		//a = clock();
-		//char* str;
-		//int length;
-
-		//FILE* file;
-
-		///fopen_s(&file, argv[1], "rb");
-		//fseek(file, 0, SEEK_END);
-		//length = ftell(file);
-		//fclose(file);
-
-		//fopen_s(&file, argv[1], "rb");
-		//str = new char[length + 1];
-
-		//fread(str, sizeof(char), length, file);
-		//fclose(file);
-		//str[length] = '\0';
-
-		//auto x = nlohmann::json::parse(str);
-		
-		//b = clock();
-		//std::cout << b - a << "ms\n";
-		//std::cout << x.is_object() << "\n";
-	}
-
-	int a, b;
+	int a, b, c;
 	int start = clock();
 
 	clau::UserType global;
-	
+
 	{
+		simdjson::dom::parser parser;
+
 		size_t len = 0;
 		a = clock();
 
-		simdjson::dom::parser parser;
+		
 		parser.docs = std::vector<simdjson::dom::document>(8);
 		for (int i = 0; i < 8; ++i) {
 			parser.docs[i].ori_doc = &parser.doc;
@@ -80,19 +59,19 @@ int main(int argc, char* argv[])
 		std::cout << b - a << "ms\n";
 
 
-		std::cout << "len " << len << "\n";
+		//std::cout << "len " << len << "\n";
 
 		a = clock();
 
 		auto count = parser.count();
 		std::vector<int64_t> start(8, 0);
-		
+
 		for (int i = 0; i < start.size(); ++i) {
 			start[i] = split[i];
 		}
 
 		std::vector<int64_t> length(start.size());
-		
+
 		length[start.size() - 1] = len - start[start.size() - 1];
 
 		for (int i = 0; i < start.size() - 1; ++i) {
@@ -103,68 +82,77 @@ int main(int argc, char* argv[])
 
 		size_t sum = 0;
 		for (int i = length.size() - 1; i >= 0; --i) {
-			sum += length[i];
+			if (length[i] > 0) {
+				sum += length[i];
+			}
 		}
 
-		std::cout << sum << " " << len << "\n";
+		//std::cout << sum << " " << len << "\n";
 
 		std::vector<const simdjson::Token*> token_arr(8);
 		std::vector<size_t> Len(8, 0);
-		
+
 		std::vector<simdjson::dom::element> tweets(8);
-			
+		std::vector<int> chk(8, false);
+
 		try {
-			std::thread thr[8];
+			std::thread* thr[8] = { nullptr };
 
 			for (int i = 0; i < 8; ++i) {
 				Parse temp;
 				temp.parser = &parser;
 
-				thr[i] = std::thread(temp, true, length[i], start[i], i, &tweets[i]);
+				if (length[i] > 0) {
+					thr[i] = new std::thread(temp, true, length[i], start[i], i, &tweets[i]);
+					chk[i] = true;
+				}
+				else {
+					thr[i] = nullptr;
+				}
 			}
 
 			for (int i = 0; i < 8; ++i) {
-				thr[i].join();
+				if (chk[i]) {
+					thr[i]->join();
+				}
 			}
 
 			for (int i = 0; i < 8; ++i) {
-				token_arr[i] = (tweets[i].raw_tape().get());
-				Len[i] = (parser.len(i));
+				if (chk[i]) {
+					delete thr[i];
+				}
+			}
+
+			for (int i = 0; i < 8; ++i) {
+				if (chk[i]) {
+					token_arr[i] = (tweets[i].raw_tape().get());
+					Len[i] = (parser.len(i));
+				}
+			//	std::cout << "start " << start[i] << " ";
+			//	std::cout << length[i] << " " << Len[i] << "\n";
 			}
 		}
 		catch (simdjson::simdjson_error e) {
 			std::cout << e.what() << "\n";
 		}
 
-		for (int i = 0; i < 7; ++i) { 
-			if ((token_arr[i] + Len[i] - 1)->is_key()) { 
-				Len[i]++; 
-				
-				for (int k = i + 1; k < 8; ++k) {
-					if (Len[k] > 0) {
-						Len[k]--; /// 연쇄..?, 작은 파일?
-						token_arr[k]++;
-						break;
-					}
-				}
-			}
-		}
 
 		b = clock();
 		std::cout << len << "\n";
-		
+
+
 
 		std::cout << b - a << "ms\n";
 
-		
+
 		a = clock();
-	
+
 		{
 			/*
 			auto& stream = std::cout;
-
+			
 			for (int i = 0; i < token_arr.size(); ++i) {
-				for (int j = 0; j < length[i]; ++j) {
+				for (int j = 0; j < Len[i]; ++j) {
 					if (token_arr[i][j].get_type() == simdjson::internal::tape_type::TRUE_VALUE) {
 						stream << "true";
 					}
@@ -184,27 +172,34 @@ int main(int argc, char* argv[])
 						stream << "null ";
 					}
 					else if (token_arr[i][j].is_key()) {
-						stream << "\"" << (token_arr[i][j].get_str()) << "\"";
+						stream << "." << j << " \"" << (token_arr[i][j].get_str()) << "\"";
 					}
 					else if (token_arr[i][j].get_type() == simdjson::internal::tape_type::STRING) {
-						stream << "\"" << (token_arr[i][j].get_str()) << "\"";
-					}std::cout << " ";
+						stream << ".." << j << " \"" << (token_arr[i][j].get_str()) << "\"";
+					}
+					else {
+						stream << "chk " << j << " " << (int)token_arr[i][j].get_type();
+					}
+
+					std::cout << " ";
 				}std::cout << "\n";
 				
 			}*/
 
+			
 			clau::LoadData::parse(token_arr, Len, global, 8);
-		 }
-	
+		}
+
+		c = clock();
+	}
 	b = clock();
-
-}
-
+	
+	std::cout << c - start << "ms\n";
 
 	std::cout << b - start << "ms\n";
 
 	//clau::LoadData::save("output.txt2", global); // debug..
-//	clau::LoadData::_save(std::cout, &global);
+	//clau::LoadData::_save(std::cout, &global);
 
 	return 0;
 }

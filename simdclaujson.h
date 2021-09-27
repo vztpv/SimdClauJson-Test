@@ -8,7 +8,7 @@
 #include <string>
 #include <fstream>
 #include <set>
-
+#include <memory_resource>
 
 namespace clau {
 	using STRING = std::string;
@@ -109,18 +109,7 @@ namespace clau {
 		return Data(token.get_type(), token.data.int_val, "", token.data.count_ut, token.data.count_it);
 	}
 
-
-	class Type {
-	public:
-		virtual bool is_user_type() const = 0;
-		virtual bool is_item_type() const = 0;
-		virtual clau::Data get_name() const = 0;
-		virtual void set_name(const STRING& name) = 0;
-		virtual Type* clone() const = 0;
-	};
-
-
-	class UserType : Type {
+	class UserType {
 	public:
 		enum { Item, ArrayOrObject };
 	private:
@@ -128,18 +117,18 @@ namespace clau {
 			return new UserType(name, type);
 		}
 
-		UserType* make_user_type(clau::Data&& name) const {
-			return new UserType(std::move(name));
+		UserType* make_user_type(clau::Data&& name, int type) const {
+			return new UserType(std::move(name), type);
 		}
 
 	public:
-		void set_name(const STRING& name) final {
+		void set_name(const STRING& name)  {
 			this->name.str_val = name;
 		}
 
-		bool is_user_type()const final { return true; }
-		bool is_item_type()const final { return false; }
-		Type* clone() const final {
+		bool is_user_type()const  { return true; }
+		bool is_item_type()const  { return false; }
+		UserType* clone() const  {
 			UserType* temp = new UserType(this->name);
 
 			temp->type = this->type;
@@ -162,14 +151,14 @@ namespace clau {
 				temp->order.push_back(x);
 			}
 
-			return (Type*)temp;
+			return temp;
 		}
 
 	private:
 		clau::Data name; // equal to key
-		std::vector<Type*> data; // ut data?
+		std::vector<UserType*> data; // ut data?
 		std::vector<clau::Data> data2; // it data
-		int type = -1; // 0 - object, 1 - array, 2 - virtual object, 3 - virtual array, -1 - root  -2 
+		int type = -1; // 0 - object, 1 - array, 2 - virtual object, 3 - virtual array, -1 - root  -2 - in parse...
 		UserType* parent = nullptr;
 
 		std::vector<int> order; // ut data and it data order....
@@ -465,7 +454,7 @@ namespace clau {
 				throw "Error not valid json in add_user_type";
 			}
 
-			this->data.push_back((Type*)make_user_type(name, type));
+			this->data.push_back(make_user_type(name, type));
 			((UserType*)this->data.back())->parent = this;
 			
 			if (!name.is_key()) {
@@ -482,7 +471,7 @@ namespace clau {
 				throw "Error not valid json in add_user_type";
 			}
 
-			this->data.push_back((Type*)make_user_type(std::move(name), type));
+			this->data.push_back(make_user_type(std::move(name), type));
 			((UserType*)this->data.back())->parent = this;
 			
 			if (!name.is_key()) {
@@ -548,7 +537,7 @@ namespace clau {
 
 
 	public:
-		Type* get_data_list(const Data& name) {
+		UserType* get_data_list(const Data& name) {
 			for (size_t i = this->data.size(); i > 0; --i) {
 				if (name == this->data[i - 1]->get_name()) {
 					return this->data[i - 1];
@@ -556,7 +545,7 @@ namespace clau {
 			}
 			throw "NOT EXIST in get_item_type_list";
 		}
-		const Type* get_data_list(const Data& name) const {
+		const UserType* get_data_list(const Data& name) const {
 			for (size_t i = this->data.size(); i > 0; --i) {
 				if (name == this->data[i - 1]->get_name()) {
 					return this->data[i - 1];
@@ -565,10 +554,10 @@ namespace clau {
 			throw "NOT EXIST in get_item_type_list";
 		}
 
-		Type*& get_data_list(size_t idx) {
+		UserType*& get_data_list(size_t idx) {
 			return this->data[idx];
 		}
-		const Type* const& get_data_list(size_t idx) const {
+		const UserType* const& get_data_list(size_t idx) const {
 			return this->data[idx];
 		}
 
@@ -595,7 +584,7 @@ namespace clau {
 			return order.size();
 		}
 		
-		size_t reserve_order_list(size_t len) {
+		void reserve_order_list(size_t len) {
 			order.reserve(len);
 		}
 
